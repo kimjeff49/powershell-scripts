@@ -1,27 +1,5 @@
-﻿param([string] $TargetDirectory)
+﻿param([string] $TargetDirectory, [string] $OutDirectory)
 
-<#
-    .SYNOPSIS
-        Mimics some JUnit XML attributes.
-    .DESCRIPTION
-        JUnitXmlData is a class for creating objects out of JUnit XML attributes, but can be
-        modified to hold more data from JUnit XML outputs 
-#>
-class JUnitXmlData {
-    [string]$Filename;
-    [string]$Tests;
-    [string]$Failures;
-
-    JUnitXmlData(
-        [string]$fn,
-        [string]$t,
-        [string]$f
-    ){
-        $this.Filename = $fn;
-        $this.Tests = $t;
-        $this.Failures = $f;
-    }
-}
 function WriteStartXml {
 param ([string]$Name)
 
@@ -63,46 +41,36 @@ function CreateHashtable {
     .SYNOPSIS
         Recursive function to make nested hashmaps based on the attributes of a file's path.
     .DESCRIPTION
-        The CreateHashtable cmdlet takes in a parameter of type ArrayList named Attributes and
-        a parameter of type hashtable named MultiAttribute. The Attributes parameter passes
-        an Arraylist of a .spec.ts file's path split by its '\'.
-
-        For example:
-            Path: "History\International_History\CV_International\CV_Locale_Asia1.spec.ts"
-            List: [History, International_History, CV_International, CV_Local_Asia1.spec.ts]
-        
-        The MultiAttribute parameter passes an empty hashmap that the recursive function will
-        nest hashmaps into. The hashmap is passed in as a parameter instead of being declared
-        as a local varaible within the function because the function is recursive and also needs
-        to start at the root directory every function call of CreateHashtable within
-        ExtractAttributes.
-    .PARAMETER Attributes
-    .PARAMETER MultiAttribute
+        The CreateHashtable cmdlet creates a nested hashtable structure mimicing the filesystem.
+    .PARAMETER FileSystem
+        Array of filenames and folders.
+    .PARAMETER HashSystem
+        Empty Hashtable that will structure all the folders and filenames.
 #>
 
     [CmdletBinding()]
     param(
-        [System.Collections.ArrayList]$Attributes,
-        [hashtable]$MultiAttribute
+        [System.Collections.ArrayList]$FileSystem,
+        [hashtable]$HashSystem
     )
 
-    # Check if it is .spec.ts.
-    $Temp = $Attributes[0];
-    If ($Temp -like "*.spec.ts") {
-        $MultiAttribute.Add($Temp, $Temp);
-    # Check if it is already present within the base of the MultiAttribute.
-    } ElseIf ($MultiAttribute.ContainsKey($Temp)){
-        $Attributes.Remove($Temp);
-        CreateHashtable -Attributes $Attributes -MultiAttribute $MultiAttribute.$Temp;
+
+    $Temp = $FileSystem[0];
+    If ($Temp -isnot [System.IO.DirectoryInfo]) {
+        $HashSystem.Add($Temp, $Temp);
+    # Check if it is already present within the base of the HashSystem.
+    } ElseIf ($HashSystem.ContainsKey($Temp)){
+        $FileSystem.Remove($Temp);
+        CreateHashtable -FileSystem $FileSystem -HashSystem $HashSystem.$Temp;
     # Create a new hashtable and traverse into the hashtable.
     } Else {
-        $MultiAttribute.Add($Temp, @{});
-        $Attributes.Remove($Temp);
-        CreateHashtable -Attributes $Attributes -MultiAttribute $MultiAttribute.$Temp;
+        $HashSystem.Add($Temp, @{});
+        $FileSystem.Remove($Temp);
+        CreateHashtable -FileSystem $FileSystem -HashSystem $HashSystem.$Temp;
     }
 }
 
-function ExtractAttributes {
+function ExtractSystem {
 <#
     .SYNOPSIS
         Cycles through each file within the directory 
@@ -114,15 +82,15 @@ function ExtractAttributes {
         [System.Array]$Dir
     )
 
-    $MultiAttribute = @{}
+    $HashSystem = @{}
     foreach($File in $Dir) {
         $SplitFilename = $File -Split '\\';
         $List = New-Object System.Collections.ArrayList($null);
         $List.AddRange($SplitFilename[4..($SplitFilename.Count - 1)]);
-        CreateHashtable -Attributes $List -MultiAttribute $MultiAttribute;
+        CreateHashtable -FileSystem $List -HashSystem $HashSystem;
     }
 
-    Return $MultiAttribute;
+    Return $HashSystem;
 }
 
 function CreateXml {
@@ -166,11 +134,13 @@ function main {
 
     $DirList = Get-ChildItem -Recurse -Path $Dir
 
-    $MappedAttributes = ExtractAttributes -Dir $DirList;
+    $HashSystem = ExtractSystem -Dir $DirList;
 
-    WriteStartXml;
+    $FolderName = $Dir | Split-Path -Leaf;
 
-    CreateXml -Parent $MappedAttributes;
+    WriteStartXml -Name $FolderName;
+
+    CreateXml -Parent $HashSystem;
 
     WriteEndXml;
 }
@@ -180,7 +150,6 @@ function main {
 #################################################################
 
 # Set in the global scope since XmlTextWriter behaves strangely.
-$OutFile = "C:\Users\LQL3ZSL\Desktop\Example2.xml";
-$global:XmlWriter = New-Object System.Xml.XmlTextWriter($OutFile, $null);
+$global:XmlWriter = New-Object System.Xml.XmlTextWriter($OutDirectory, $null);
 
 main -Dir $TargetDirectory;
